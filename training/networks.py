@@ -106,7 +106,7 @@ class FullyConnectedLayer(torch.nn.Module):
         w = self.weight.to(x.dtype) * self.weight_gain
         # dw_dx = torch.autograd.grad(outputs=[w.sum()], inputs=[x], create_graph=True,
         #                              only_inputs=True)[0]
-        # dic[pre_name + '_dw_dx'] = dw_dx.cpu().detach().numpy()
+        # dic[pre_name + '.dw_dx'] = dw_dx.cpu().detach().numpy()
         b = self.bias
         if b is not None:
             b = b.to(x.dtype)
@@ -118,17 +118,17 @@ class FullyConnectedLayer(torch.nn.Module):
             if dic is not None:
                 dout_dx = torch.autograd.grad(outputs=[out.sum()], inputs=[x], create_graph=True,
                                              only_inputs=True)[0]
-                dic[pre_name + '_dout_dx'] = dout_dx.cpu().detach().numpy()
+                dic[pre_name + '.dout_dx'] = dout_dx.cpu().detach().numpy()
         else:
             r = x.matmul(w.t())
             out = bias_act.bias_act(r, b, act=self.activation)
             if dic is not None:
                 dr_dx = torch.autograd.grad(outputs=[r.sum()], inputs=[x], create_graph=True,
                                              only_inputs=True)[0]
-                dic[pre_name + '_dr_dx'] = dr_dx.cpu().detach().numpy()
+                dic[pre_name + '.dr_dx'] = dr_dx.cpu().detach().numpy()
                 dout_dr = torch.autograd.grad(outputs=[out.sum()], inputs=[r], create_graph=True,
                                              only_inputs=True)[0]
-                dic[pre_name + '_dout_dr'] = dout_dr.cpu().detach().numpy()
+                dic[pre_name + '.dout_dr'] = dout_dr.cpu().detach().numpy()
         return out
 
 #----------------------------------------------------------------------------
@@ -234,7 +234,7 @@ class MappingNetwork(torch.nn.Module):
                 x = normalize_2nd_moment(z.to(torch.float32))
                 dx_dz1 = torch.autograd.grad(outputs=[x.sum()], inputs=[z], create_graph=True,
                                              only_inputs=True)[0]
-                dic[pre_name + '_dx_dz1'] = dx_dz1.cpu().detach().numpy()
+                dic[pre_name + '.dx_dz1'] = dx_dz1.cpu().detach().numpy()
             if self.c_dim > 0:
                 misc.assert_shape(c, [None, self.c_dim])
                 y = normalize_2nd_moment(self.embed(c.to(torch.float32)))
@@ -246,7 +246,7 @@ class MappingNetwork(torch.nn.Module):
             x = layer(x, dic, pre_name + '_fc%d'%idx)
         dx_dz2 = torch.autograd.grad(outputs=[x.sum()], inputs=[z], create_graph=True,
                                      only_inputs=True)[0]
-        dic[pre_name + '_dx_dz2'] = dx_dz2.cpu().detach().numpy()
+        dic[pre_name + '.dx_dz2'] = dx_dz2.cpu().detach().numpy()
 
         # Update moving average of W.
         if self.w_avg_beta is not None and self.training and not skip_w_avg_update:
@@ -311,7 +311,7 @@ class SynthesisLayer(torch.nn.Module):
         styles = self.affine(w)
         dstyles_dw = torch.autograd.grad(outputs=[styles.sum()], inputs=[w], create_graph=True,
                                       only_inputs=True)[0]
-        dic[pre_name + 'dstyles_dw'] = dstyles_dw.cpu().detach().numpy()
+        dic[pre_name + '.dstyles_dw'] = dstyles_dw.cpu().detach().numpy()
 
         noise = None
         if self.use_noise and noise_mode == 'random':
@@ -326,21 +326,21 @@ class SynthesisLayer(torch.nn.Module):
 
         dimg2_dx = torch.autograd.grad(outputs=[img2.sum()], inputs=[x], create_graph=True,
                                       only_inputs=True)[0]
-        dic[pre_name + 'dimg2_dx'] = dimg2_dx.cpu().detach().numpy()
+        dic[pre_name + '.dimg2_dx'] = dimg2_dx.cpu().detach().numpy()
         dimg2_dw = torch.autograd.grad(outputs=[img2.sum()], inputs=[w], create_graph=True,
                                       only_inputs=True)[0]
-        dic[pre_name + 'dimg2_dw'] = dimg2_dw.cpu().detach().numpy()
+        dic[pre_name + '.dimg2_dw'] = dimg2_dw.cpu().detach().numpy()
 
         dimg2_dstyles = torch.autograd.grad(outputs=[img2.sum()], inputs=[styles], create_graph=True,
                                       only_inputs=True)[0]
-        dic[pre_name + 'dimg2_dstyles'] = dimg2_dstyles.cpu().detach().numpy()
+        dic[pre_name + '.dimg2_dstyles'] = dimg2_dstyles.cpu().detach().numpy()
 
         act_gain = self.act_gain * gain
         act_clamp = self.conv_clamp * gain if self.conv_clamp is not None else None
         img3 = bias_act.bias_act(img2, self.bias.to(img2.dtype), act=self.activation, gain=act_gain, clamp=act_clamp)
         dimg3_dimg2 = torch.autograd.grad(outputs=[img3.sum()], inputs=[img2], create_graph=True,
                                       only_inputs=True)[0]
-        dic[pre_name + 'dimg3_dimg2'] = dimg3_dimg2.cpu().detach().numpy()
+        dic[pre_name + '.dimg3_dimg2'] = dimg3_dimg2.cpu().detach().numpy()
         return img3
 
 #----------------------------------------------------------------------------
