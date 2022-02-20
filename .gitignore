@@ -8,3 +8,4 @@ StyleGAN2_ADA_Output/
 *.pkl
 *.pth
 *.npz
+*.pdparams

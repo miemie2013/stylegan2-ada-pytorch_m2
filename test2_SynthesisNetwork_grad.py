@@ -25,7 +25,8 @@ synthesis = SynthesisNetwork(w_dim=w_dim, img_resolution=img_resolution, img_cha
 synthesis.train()
 torch.save(synthesis.state_dict(), "pytorch_synthesis.pth")
 
-ws0 = torch.randn([1, 1, 512])
+batch_size = 2
+ws0 = torch.randn([batch_size, 1, 512])
 ws = ws0.repeat([1, synthesis.num_ws, 1])
 ws.requires_grad_(True)
 
