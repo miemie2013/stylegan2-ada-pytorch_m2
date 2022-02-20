@@ -37,9 +37,6 @@ ws.stop_gradient = False
 
 # img = synthesis(ws, dic, pre_name + '.synthesis')
 img = synthesis(ws)
-# dimg_dws = torch.autograd.grad(outputs=[img.sum()], inputs=[ws], create_graph=True,
-#                                only_inputs=True)[0]
-
 
 dimg_dws = paddle.grad(
     outputs=[img.sum()],
