@@ -44,20 +44,23 @@ dimg_dws = paddle.grad(
     create_graph=True,  # 最终loss里包含梯度，需要求梯度的梯度，所以肯定需要建立反向图。
     retain_graph=True)[0]
 
+# paddle版SynthesisNetwork与pytorch版SynthesisNetwork有相同的输出
 img_paddle = img.numpy()
 ddd = np.sum((img_pytorch - img_paddle)**2)
 print('ddd=%.6f' % ddd)
 
 
+# paddle版SynthesisNetwork与pytorch版SynthesisNetwork有不同的梯度
 dimg_dws_paddle = dimg_dws.numpy()
 ddd = np.sum((dimg_dws_pytorch - dimg_dws_paddle)**2)
 print('ddd=%.6f' % ddd)
 
-
+# 只有最后一个ws(ws[:, -1, :])有梯度。
 dimg_dws_paddle = dimg_dws.numpy()
 ddd = np.sum((dimg_dws_pytorch[0][15] - dimg_dws_paddle[0][15])**2)
 print('ddd=%.6f' % ddd)
 
+# 只有最后一个ws(ws[:, -1, :])有梯度。
 dimg_dws_paddle = dimg_dws.numpy()
 ddd = np.sum((dimg_dws_pytorch[1][15] - dimg_dws_paddle[1][15])**2)
 print('ddd=%.6f' % ddd)
