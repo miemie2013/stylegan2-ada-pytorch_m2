@@ -696,16 +696,17 @@ class SynthesisLayer(nn.Layer):
         self.bias = self.create_parameter([out_channels, ],
                                           default_initializer=paddle.nn.initializer.Constant(0.0))
 
-    def forward(self, x, w, dic2, pre_name, noise_mode='random', fused_modconv=True, gain=1):
+    def forward(self, x, w, dic2=None, pre_name='', noise_mode='random', fused_modconv=True, gain=1):
         assert noise_mode in ['random', 'const', 'none']
         in_resolution = self.resolution // self.up
         styles = self.affine(w)
 
-        dstyles_dw = paddle.grad(outputs=[styles.sum()], inputs=[w], create_graph=True)[0]
-        dstyles_dw_paddle = dstyles_dw.numpy()
-        dstyles_dw_pytorch = dic2[pre_name + '.dstyles_dw']
-        ddd = np.sum((dstyles_dw_pytorch - dstyles_dw_paddle) ** 2)
-        print('ddd=%.6f' % ddd)
+        if dic2 is not None:
+            dstyles_dw = paddle.grad(outputs=[styles.sum()], inputs=[w], create_graph=True)[0]
+            dstyles_dw_paddle = dstyles_dw.numpy()
+            dstyles_dw_pytorch = dic2[pre_name + '.dstyles_dw']
+            ddd = np.sum((dstyles_dw_pytorch - dstyles_dw_paddle) ** 2)
+            print('ddd=%.6f' % ddd)
 
         noise = None
         if self.use_noise and noise_mode == 'random':
@@ -717,23 +718,24 @@ class SynthesisLayer(nn.Layer):
         img2 = modulated_conv2d(x=x, weight=self.weight, styles=styles, noise=noise, up=self.up,
                                 padding=self.padding, resample_filter=self.resample_filter, flip_weight=flip_weight, fused_modconv=fused_modconv)
 
-        dimg2_dx = paddle.grad(outputs=[img2.sum()], inputs=[x], create_graph=True)[0]
-        dimg2_dx_paddle = dimg2_dx.numpy()
-        dimg2_dx_pytorch = dic2[pre_name + '.dimg2_dx']
-        ddd = np.sum((dimg2_dx_pytorch - dimg2_dx_paddle) ** 2)
-        print('ddd=%.6f' % ddd)
+        if dic2 is not None:
+            dimg2_dx = paddle.grad(outputs=[img2.sum()], inputs=[x], create_graph=True)[0]
+            dimg2_dx_paddle = dimg2_dx.numpy()
+            dimg2_dx_pytorch = dic2[pre_name + '.dimg2_dx']
+            ddd = np.sum((dimg2_dx_pytorch - dimg2_dx_paddle) ** 2)
+            print('ddd=%.6f' % ddd)
 
-        dimg2_dw = paddle.grad(outputs=[img2.sum()], inputs=[w], create_graph=True)[0]
-        dimg2_dw_paddle = dimg2_dw.numpy()
-        dimg2_dw_pytorch = dic2[pre_name + '.dimg2_dw']
-        ddd = np.sum((dimg2_dw_pytorch - dimg2_dw_paddle) ** 2)
-        print('dimg2_dw_diff=%.6f' % ddd)
+            dimg2_dw = paddle.grad(outputs=[img2.sum()], inputs=[w], create_graph=True)[0]
+            dimg2_dw_paddle = dimg2_dw.numpy()
+            dimg2_dw_pytorch = dic2[pre_name + '.dimg2_dw']
+            ddd = np.sum((dimg2_dw_pytorch - dimg2_dw_paddle) ** 2)
+            print('dimg2_dw_diff=%.6f' % ddd)
 
-        dimg2_dstyles = paddle.grad(outputs=[img2.sum()], inputs=[styles], create_graph=True)[0]
-        dimg2_dstyles_paddle = dimg2_dstyles.numpy()
-        dimg2_dstyles_pytorch = dic2[pre_name + '.dimg2_dstyles']
-        ddd = np.sum((dimg2_dstyles_pytorch - dimg2_dstyles_paddle) ** 2)
-        print('ddd=%.6f' % ddd)
+            dimg2_dstyles = paddle.grad(outputs=[img2.sum()], inputs=[styles], create_graph=True)[0]
+            dimg2_dstyles_paddle = dimg2_dstyles.numpy()
+            dimg2_dstyles_pytorch = dic2[pre_name + '.dimg2_dstyles']
+            ddd = np.sum((dimg2_dstyles_pytorch - dimg2_dstyles_paddle) ** 2)
+            print('ddd=%.6f' % ddd)
 
         act_gain = self.act_gain * gain
         act_clamp = self.conv_clamp * gain if self.conv_clamp is not None else None
