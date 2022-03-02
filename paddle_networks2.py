@@ -471,6 +471,7 @@ class FullyConnectedLayer(nn.Layer):
 
     def forward(self, x, dic2=None, pre_name=None):
         w = paddle.cast(self.weight, dtype=x.dtype) * self.weight_gain
+        # w = self.weight * self.weight_gain
         b = self.bias
         if b is not None:
             b = paddle.cast(b, dtype=x.dtype)
@@ -478,8 +479,11 @@ class FullyConnectedLayer(nn.Layer):
                 b = b * self.bias_gain
 
         if self.activation == 'linear' and b is not None:
-            # x = paddle.addmm(b.unsqueeze(0), x, w.t())   # 因为paddle.addmm()没有实现二阶梯度，所以用其它等价实现。
+            # out = paddle.addmm(b.unsqueeze(0), x, w.t())   # 因为paddle.addmm()没有实现二阶梯度，所以用其它等价实现。
             out = paddle.matmul(x, w, transpose_y=True) + b.unsqueeze(0)
+            # out = x.matmul(w.t()) + b.unsqueeze(0).tile([x.shape[0], 1])
+            # out = F.linear(x, w.t(), bias=b)
+            # out = F.linear(x, (self.weight * self.weight_gain).t(), bias=self.bias * self.bias_gain)
             if dic2 is not None:
                 dout_dx = paddle.grad(outputs=[out.sum()], inputs=[x], create_graph=True)[0]
                 dout_dx_pytorch = dic2[pre_name + '.dout_dx']
@@ -740,7 +744,14 @@ class SynthesisLayer(nn.Layer):
         act_gain = self.act_gain * gain
         act_clamp = self.conv_clamp * gain if self.conv_clamp is not None else None
         img3 = bias_act(img2, paddle.cast(self.bias, dtype=img2.dtype), act=self.activation, gain=act_gain, clamp=act_clamp)
-        return img3
+        return img3, img2, styles
+
+    def get_grad(self, dloss_dimg3, img3, img2, styles, x, w):
+        dloss_dimg2 = paddle.grad(outputs=[(dloss_dimg3 * img3).sum()], inputs=[img2], create_graph=True)[0]
+        dloss_dx = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[x], create_graph=True)[0]
+        dloss_dstyles = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[styles], create_graph=True)[0]
+        dloss_dw = paddle.grad(outputs=[(dloss_dstyles * styles).sum()], inputs=[w], create_graph=True)[0]
+        return dloss_dx, dloss_dw
 
 
 
@@ -881,50 +892,149 @@ class StyleGANv2ADA_SynthesisNetwork(nn.Layer):
         fused_modconv = False
         layer_kwargs = {}
 
-        x = img = None
+        # x = img = None
+        xs = []
+        imgs = []
+        synthesisLayer_img2s = []
+        synthesisLayer_styless = []
         i = 0
         conv_i = 0
         torgb_i = 0
-        batch_size = ws.shape[0]
+        # batch_size = ws.shape[0]
+        batch_size = ws[0].shape[0]
+        self.start_i = []
+        self.end_i = []
         for block_idx, res in enumerate(self.block_resolutions):
+            temp_x = []
+            temp_img = []
+            synthesisLayer_img2 = []
+            synthesisLayer_styles = []
             in_channels = self.channels_dict[res // 2] if res > 4 else 0
             is_last = self.is_lasts[block_idx]
             architecture = self.architectures[block_idx]
 
             if in_channels == 0:
                 # x = paddle.cast(self.const, dtype=dtype)
-                x = self.const
-                x = x.unsqueeze(0).tile([batch_size, 1, 1, 1])
+                x0 = self.const
+                x1 = x0.unsqueeze(0).tile([batch_size, 1, 1, 1])
+                temp_x.append(x0)
+                temp_x.append(x1)
+                img0 = None
+                temp_img.append(img0)
             else:
                 # x = paddle.cast(x, dtype=dtype)
-                pass
+                img0 = imgs[-1][-1]
+                x0 = xs[-1][-1]
+                temp_x.append(x0)
+                temp_img.append(img0)
 
+            self.start_i.append(i)
             # Main layers.
             if in_channels == 0:
-                x = self.convs[conv_i](x, ws[:, i], fused_modconv=fused_modconv, **layer_kwargs)
+                # x2, img_2, styles = self.convs[conv_i](x1, ws[:, i], fused_modconv=fused_modconv, **layer_kwargs)
+                x2, img_2, styles = self.convs[conv_i](x1, ws[i], fused_modconv=fused_modconv, **layer_kwargs)
+                synthesisLayer_img2.append(img_2)
+                synthesisLayer_styles.append(styles)
                 conv_i += 1
                 i += 1
+                temp_x.append(x2)
             # elif self.architecture == 'resnet':
             #     y = self.skip(x, gain=np.sqrt(0.5))
             #     x = self.conv0(x, ws[:, i + 1], fused_modconv=fused_modconv, **layer_kwargs)
             #     x = self.conv1(x, ws[:, i + 1], fused_modconv=fused_modconv, gain=np.sqrt(0.5), **layer_kwargs)
             #     x = y.add_(x)
             else:
-                x = self.convs[conv_i](x, ws[:, i], fused_modconv=fused_modconv, **layer_kwargs)
+                # x1, img_2, styles = self.convs[conv_i](x0, ws[:, i], fused_modconv=fused_modconv, **layer_kwargs)
+                x1, img_2, styles = self.convs[conv_i](x0, ws[i], fused_modconv=fused_modconv, **layer_kwargs)
+                synthesisLayer_img2.append(img_2)
+                synthesisLayer_styles.append(styles)
                 i += 1
-                x = self.convs[conv_i + 1](x, ws[:, i], fused_modconv=fused_modconv, **layer_kwargs)
+                # x2, img_2, styles = self.convs[conv_i + 1](x1, ws[:, i], fused_modconv=fused_modconv, **layer_kwargs)
+                x2, img_2, styles = self.convs[conv_i + 1](x1, ws[i], fused_modconv=fused_modconv, **layer_kwargs)
+                synthesisLayer_img2.append(img_2)
+                synthesisLayer_styles.append(styles)
                 i += 1
                 conv_i += 2
+                temp_x.append(x1)
+                temp_x.append(x2)
 
             # ToRGB.
-            if img is not None:
-                img = upsample2d(img, getattr(self, f"resample_filter_{block_idx}"))
+            if img0 is not None:
+                img1 = upsample2d(img0, getattr(self, f"resample_filter_{block_idx}"))
+            else:
+                img1 = None
+            temp_img.append(img1)
             if is_last or architecture == 'skip':
-                y = self.torgbs[torgb_i](x, ws[:, i], fused_modconv=fused_modconv)
+                # y = self.torgbs[torgb_i](x2, ws[:, i], fused_modconv=fused_modconv)
+                y = self.torgbs[torgb_i](x2, ws[i], fused_modconv=fused_modconv)
+                self.end_i.append(i)
                 torgb_i += 1
                 # y = paddle.cast(y, dtype=paddle.float32)
-                img = img + y if img is not None else y
-        return img
+                img2 = img1 + y if img1 is not None else y
+                temp_img.append(img2)
+            xs.append(temp_x)
+            imgs.append(temp_img)
+            synthesisLayer_img2s.append(synthesisLayer_img2)
+            synthesisLayer_styless.append(synthesisLayer_styles)
+        return img2, xs, imgs, synthesisLayer_img2s, synthesisLayer_styless
+
+    def get_grad(self, dloss_dimg2, xs, imgs, synthesisLayer_img2s, synthesisLayer_styless, ws):
+        conv_i = len(self.convs) - 1
+        dloss_dw = []
+        for block_idx in range(len(self.block_resolutions)-1, -1, -1):
+            res = self.block_resolutions[block_idx]
+            temp_x = xs[block_idx]
+            temp_img = imgs[block_idx]
+            synthesisLayer_img2 = synthesisLayer_img2s[block_idx]
+            synthesisLayer_styles = synthesisLayer_styless[block_idx]
+            in_channels = self.channels_dict[res // 2] if res > 4 else 0
+            is_last = self.is_lasts[block_idx]
+            architecture = self.architectures[block_idx]
+
+            start_i = self.start_i[block_idx]
+            end_i = self.end_i[block_idx]
+            if is_last or architecture == 'skip':
+                img2 = temp_img[-1]
+                x2 = temp_x[-1]
+                dloss_dw0 = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[ws[end_i]], create_graph=True)[0]
+                # dloss_dw0 = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[ws], create_graph=True)[0]
+                dloss_dx2 = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[x2], create_graph=True)[0]
+                dloss_dw.append(dloss_dw0)
+
+            # ToRGB.
+            if in_channels != 0:
+                img1 = temp_img[-2]
+                img0 = temp_img[-3]
+                dloss_dimg1 = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[img1], create_graph=True)[0]
+                dloss_dimg0 = paddle.grad(outputs=[(dloss_dimg1 * img1).sum()], inputs=[img0], create_graph=True)[0]
+            else:
+                dloss_dimg0 = dloss_dimg2
+
+            # Main layers.
+            if in_channels == 0:
+                x1 = temp_x[-2]
+                x0 = temp_x[-3]
+                # dloss_dx1, dloss_dw1 = self.convs[conv_i].get_grad(dloss_dx2, x2, synthesisLayer_img2[0], synthesisLayer_styles[0], x1, ws[:, end_i - 1])
+                dloss_dx1, dloss_dw1 = self.convs[conv_i].get_grad(dloss_dx2, x2, synthesisLayer_img2[0], synthesisLayer_styles[0], x1, ws[end_i - 1])
+                conv_i -= 1
+                dloss_dw.append(dloss_dw1)
+            else:
+                x1 = temp_x[-2]
+                x0 = temp_x[-3]
+                # dloss_dx1, dloss_dw1 = self.convs[conv_i].get_grad(dloss_dx2, x2, synthesisLayer_img2[1], synthesisLayer_styles[1], x1, ws[end_i - 1])
+                _, dloss_dw1 = self.convs[conv_i].get_grad(dloss_dx2, x2, synthesisLayer_img2[1], synthesisLayer_styles[1], x1, ws[end_i - 1])
+                dloss_dx1 = paddle.grad(outputs=[(dloss_dimg2 * img2).sum()], inputs=[x1], create_graph=True)[0]
+                conv_i -= 1
+                dloss_dx0, dloss_dw2 = self.convs[conv_i].get_grad(dloss_dx1, x1, synthesisLayer_img2[0], synthesisLayer_styles[0], x0, ws[end_i - 2])
+                conv_i -= 1
+                dloss_dw.append(dloss_dw1)
+                dloss_dw.append(dloss_dw2)
+
+            if in_channels == 0:
+                pass
+            else:
+                dloss_dimg2 = dloss_dimg0
+        return dloss_dw
 
 
 

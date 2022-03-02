@@ -41,11 +41,11 @@ ws.stop_gradient = False
 y, img2, styles = synthesisLayer(x, ws, dic2, pre_name + '.synthesisLayer', fused_modconv=fused_modconv)
 # y = synthesisLayer(x, ws, fused_modconv=fused_modconv)
 
-# dysum_dy = paddle.grad(outputs=[y.sum()], inputs=[y], create_graph=True)[0]
-# dy_dx, dy_dws = synthesisLayer.get_grad(dysum_dy, y, img2, styles, x, ws)
+dysum_dy = paddle.grad(outputs=[y.sum()], inputs=[y], create_graph=True)[0]
+dy_dx, dy_dws = synthesisLayer.get_grad(dysum_dy, y, img2, styles, x, ws)
 
-dy_dx = paddle.grad(outputs=[y.sum()], inputs=[x], create_graph=True)[0]
-dy_dws = paddle.grad(outputs=[y.sum()], inputs=[ws], create_graph=True)[0]
+# dy_dx = paddle.grad(outputs=[y.sum()], inputs=[x], create_graph=True)[0]
+# dy_dws = paddle.grad(outputs=[y.sum()], inputs=[ws], create_graph=True)[0]
 
 y_paddle = y.numpy()
 ddd = np.sum((y_pytorch - y_paddle)**2)
